@@ -1,0 +1,16 @@
+{
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "axios": "^1.7.9",
+    "jest": "^29.7.0",
+    "k6": "^0.0.0",
+    "pg": "^8.13.1",
+    "supertest": "^7.0.0"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.5",
+    "express": "^4.21.2"
+  }
+}

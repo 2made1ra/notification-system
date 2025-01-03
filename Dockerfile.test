@@ -1,0 +1,31 @@
+# Используем официальный образ Node.js для CI/CD тестов
+FROM node:18-alpine
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Копируем package.json и устанавливаем зависимости для Jest и Supertest
+COPY package*.json ./
+RUN npm install
+
+# Копируем весь проект
+COPY . .
+
+# Устанавливаем bash и curl для работы с k6
+RUN apk add --no-cache bash curl
+
+# Устанавливаем k6
+RUN curl -LO https://github.com/grafana/k6/releases/download/v0.43.1/k6-v0.43.1-linux-amd64.tar.gz && \
+    tar -xvzf k6-v0.43.1-linux-amd64.tar.gz && \
+    mv k6-v0.43.1-linux-amd64/k6 /usr/local/bin/ && \
+    rm -rf k6*
+
+# Устанавливаем тайм-ауты и параметры для тестов
+ENV NODE_ENV=test
+ENV JEST_TIMEOUT=10000 
+
+# Настраиваем команду для выполнения тестов
+ENTRYPOINT ["sh", "-c"]
+
+# Разрешаем выбор команды (тесты или стресс-тесты) при запуске контейнера
+CMD ["npm run test"]

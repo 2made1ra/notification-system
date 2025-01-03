@@ -1,0 +1,19 @@
+global:
+  # Как часто (в секундах) Prometheus будет опрашивать источники метрик (scrape).
+  scrape_interval: 15s
+
+scrape_configs:
+  # Этот job_name "gateway" будет собирать метрики с notification-gateway
+  - job_name: 'gateway'
+    static_configs:
+      - targets: ['gateway:3000']  # Адрес и порт, где отдаются метрики
+
+  # Аналогично email-service
+  - job_name: 'email-service'
+    static_configs:
+      - targets: ['email-service:3000']
+
+  # Аналогично sms-service
+  - job_name: 'sms-service'
+    static_configs:
+      - targets: ['sms-service:3000']

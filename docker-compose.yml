@@ -1,0 +1,152 @@
+# version: '3.8'
+services:
+  # --- RabbitMQ ---
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - "5672:5672"     # для подключения микросервисов
+      - "15672:15672"   # панель управления RabbitMQ (web interface)
+
+  # --- База данных (PostgreSQL) ---
+  db:
+    image: postgres:14
+    container_name: postgres
+    environment:
+      POSTGRES_USER: notifications
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: notifications_db
+    ports:
+      - "5432:5432"
+
+
+  # --- MailHog для тестов отправки email без доступа к SMTP ---
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    ports:
+      - "8025:8025"  # Web UI (HTTP)
+      - "1025:1025"  # SMTP порт
+      
+
+  gateway:
+    build: ./gateway
+    container_name: notification-gateway
+    ports:
+      - "3000:3000"
+    depends_on:
+      - rabbitmq
+      - db
+    environment:
+      RABBITMQ_URL: amqp://user:password@rabbitmq:5672
+      DATABASE_URL: postgres://notifications:password@db:5432/notifications_db
+
+  
+  email-service:
+    build: ./email-service
+    container_name: email-service
+    depends_on:
+      - rabbitmq
+      - db
+    environment:
+      RABBITMQ_URL: amqp://user:password@rabbitmq:5672
+      DATABASE_URL: postgres://notifications:password@db:5432/notifications_db
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+      SMTP_USER: ""
+      SMTP_PASS: ""
+
+  # --- Для twilio я использовал тестовые данные предоставленные ими же --- #  
+  sms-service:
+    build: ./sms-service
+    container_name: sms-service
+    depends_on:
+      - rabbitmq
+      - db
+    environment:
+      RABBITMQ_URL: amqp://user:password@rabbitmq:5672
+      DATABASE_URL: postgres://notifications:password@db:5432/notifications_db
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID} # добавлены в .env
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      MAX_RETRY_COUNT: 10
+
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+      
+
+  # --- Мониторинг ---
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    depends_on:
+      - gateway
+      - email-service
+      - sms-service
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  # --- Контейнер для тестов ---- #
+  stress-test-email:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      - gateway
+    environment:
+      DATABASE_URL: postgres://notifications:password@db:5432/notifications_db
+      RABBITMQ_URL: amqp://user:password@rabbitmq:5672
+    command: k6 run tests/stress/stress-test-email.js
+    profiles:
+      - stress-tests-email
+
+  
+  stress-test-sms:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      - gateway
+    environment:
+      DATABASE_URL: postgres://notifications:password@db:5432/notifications_db
+      RABBITMQ_URL: amqp://user:password@rabbitmq:5672
+    command: k6 run tests/stress/stress-test-sms.js
+    profiles:
+      - stress-tests-sms
+
+
+  gateway-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      - gateway
+      - db
+      - rabbitmq
+    entrypoint: ["sh", "-c"]
+    command: "npm test -- tests/unit/gateway.test.js"
+    profiles:
+      - gateway-test
